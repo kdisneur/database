@@ -1,0 +1,41 @@
+#compdef _database database
+
+_database() {
+  local folder=${DATABASE_CONFIG_PATH:-${ENVIRONMENT_CONFIG_PATH:-${HOME}/.config/environment}/database};
+
+  local curcontext="$curcontext" state line
+
+  typeset -A opt_args
+
+  _arguments -C \
+    "-d[Enable debug mode]" \
+    "-f[Force loading event when an environment is already loaded]" \
+    "-h[Show help information]" \
+    "-v[Enable verbose mode]" \
+    "1: :->project" \
+    "2: :->environment"
+
+  case ${state} in
+    project)
+      _loadProjects ${folder};
+      ;;
+    environment)
+      _loadEnvironment ${folder} $line[1];
+      ;;
+  esac
+}
+
+_loadProjects() {
+  local folder=$1;
+
+  _values 'project' $(cd $folder; ls | cut -f1 -d. | uniq);
+}
+
+_loadEnvironment() {
+  local folder=$1;
+  local project=$2;
+
+  _values 'environment' $(cd $folder; ls ${project}.* | cut -f2 -d. | uniq);
+}
+
+_database "$@"

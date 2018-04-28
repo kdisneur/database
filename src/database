@@ -1,0 +1,134 @@
+#! /usr/bin/env bash
+
+exec 4>/dev/null;
+
+_scriptName=$(basename $0);
+_shouldBeExecuted=$([ "${BASH_SOURCE[0]}" = "${0}" ] && echo "true" || echo "false");
+
+_configPath=${DATABASE_CONFIG_PATH:-${ENVIRONMENT_CONFIG_PATH:-${HOME}/.config/environment}/database};
+_databaseBinPath=${DATABASE_BIN_PATH:-psql};
+
+_error() {
+  local withUsage="false";
+
+  if [ "${1}" = "true" ]; then
+    withUsage="true";
+    shift;
+  elif [ "${1}" = "false" ]; then
+    withUsage="false";
+    shift;
+  fi
+
+  while [ ${#} -gt 0 ]; do
+    local message=${1};
+
+    shift;
+
+    >&2 echo "${message}";
+  done
+
+  if [ "${withUsage}" = "true" ]; then
+    >&2 echo "";
+    >&2 echo "$(_usage)";
+  fi
+
+  exit 1;
+}
+
+_errorWithUsage() {
+  _error "true" "${@}";
+}
+
+_filePath() {
+  local project=${1};
+  local environment=${2};
+
+  echo ${_configPath}/${project}.${environment};
+}
+
+_loadEnvironmentVariables() {
+  local project=${1};
+  local environment=${2};
+
+  >&4 echo "Loading ${environment} environment variables for ${project}...";
+  source $(_filePath ${project} ${environment});
+}
+
+_spawnPSQL() {
+  >&4 echo "Spwaning PSQL command line..."
+  ${_databaseBinPath};
+}
+
+_usage() {
+cat <<EOF
+Usage: ${_scriptName} [-d|-h|-v] <project> [<environment>]
+
+Flags:
+  -d           Debug mode
+  -h           Display this usage text
+  -v           Make it more verbose
+
+Environment Variables:
+  DATABASE_CONFIG_PATH: Path where all the environment variable files are stored. It defaults to
+                        ENVIRONMENT_CONFIG_PATH/database
+                        Currently set to "${_configPath}"
+  DATABASE_BIN_PATH:    Path to the database binary to execute. Binary must be compatible with PSQL
+                        options (especially environment variables)
+
+Arguments:
+  project:     Name of the project to load
+  environment: (Default: dev) Environment name to load. The file \`<project>.<environment>\` will
+               be loaded from: "${_configPath}"
+
+Example:
+  # Start a new pgsql shell with mydb dev configuation loaded
+  ${_scriptName} mydb
+EOF
+}
+
+_validateScriptArguments() {
+  local project=${1:-};
+  local environment=${2:-};
+
+  if [ -z ${project} ]; then
+    _errorWithUsage "Project name is required".
+  fi
+
+  local path=$(_filePath ${project} ${environment});
+
+  if [ ! -f ${path} ]; then
+    _error "File ${path} doesn't exist"
+  fi
+}
+
+if [ ${_shouldBeExecuted} = "true" ]; then
+  set -o errexit
+  set -o nounset
+  set -o pipefail
+
+  OPTIND=1;
+  while getopts "h?d?v?" option; do
+    case "${option}" in
+      "d")
+        exec 4>&1;
+        set -o xtrace;
+        ;;
+      "h")
+        echo "$(_usage)";
+        exit 0;
+        ;;
+      "v")
+        exec 4>&1;
+        ;;
+   esac
+  done
+
+  shift $((OPTIND-1));
+
+  _name=${1:-};
+  _environment=${2:-"dev"};
+
+  _validateScriptArguments "${_name}" "${_environment}";
+  _loadEnvironmentVariables ${_name} ${_environment};
+  _spawnPSQL;
+fi
